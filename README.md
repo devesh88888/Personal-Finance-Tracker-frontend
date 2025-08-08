@@ -1,36 +1,193 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 💰 Personal Finance Tracker
 
-## Getting Started
+A full-stack application to **track your income and expenses** with secure **authentication**, **role-based access**, and **real-time analytics**.
 
-First, run the development server:
+---
+
+## 🧰 Tech Stack
+
+| Layer     | Technology                          |
+|-----------|-------------------------------------|
+| Frontend  | Next.js, Tailwind CSS               |
+| Backend   | Node.js, Express.js                 |
+| Database  | PostgreSQL                          |
+| Cache     | Redis                               |
+| Charts    | Chart.js / Recharts                 |
+| Auth      | JWT + RBAC                          |
+
+---
+
+## 🚀 Features
+
+- 🔐 User authentication (JWT)
+- 👥 Role-based access (admin/user)
+- 💸 Income and expense tracking
+- 📊 Chart-based analytics
+- ⚡ Redis caching for performance
+- 📱 Responsive and modern UI
+
+---
+
+## 🏁 Getting Started
+
+### 📦 Clone the Repository
+
+```bash
+git clone https://github.com/your-username/personal-finance-tracker.git
+cd personal-finance-tracker
+```
+
+---
+
+## 🛠️ Backend Setup (`/backend`)
+
+### 1. Install Dependencies
+
+```bash
+cd backend
+npm install
+```
+
+### 2. Setup Environment Variables
+
+```bash
+cp .env.example .env
+```
+
+Update the following variables in `.env`:
+
+```env
+PORT=5000
+DATABASE_URL=postgresql://<username>:<password>@localhost:5432/finance_db
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=your_secret_key
+```
+
+### 3. Create PostgreSQL Tables
+
+```sql
+-- Users Table
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  role TEXT DEFAULT 'user',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Transactions Table
+CREATE TABLE transactions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  type TEXT CHECK (type IN ('income', 'expense')) NOT NULL,
+  category TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 4. Start the Backend Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+API runs at: `http://localhost:5000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📡 API Routes
 
-## Learn More
+### 🔐 Auth
 
-To learn more about Next.js, take a look at the following resources:
+| Method | Endpoint              | Description        |
+|--------|-----------------------|--------------------|
+| POST   | `/api/auth/register`  | Register new user  |
+| POST   | `/api/auth/login`     | Login & get token  |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 💰 Transactions
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Method | Endpoint                | Description             |
+|--------|-------------------------|-------------------------|
+| GET    | `/api/transactions`     | Fetch user transactions |
+| POST   | `/api/transactions`     | Add a new transaction   |
+| PUT    | `/api/transactions/:id` | Update a transaction    |
+| DELETE | `/api/transactions/:id` | Delete a transaction    |
 
-## Deploy on Vercel
+> 🔐 All transaction routes require JWT in `Authorization: Bearer <token>` header.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🎨 Frontend Setup (`/frontend`)
+
+### 1. Install Dependencies
+
+```bash
+cd ../frontend
+npm install
+```
+
+### 2. Configure Environment
+
+```bash
+cp .env.example .env.local
+```
+
+Add:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+```
+
+### 3. Start Frontend Server
+
+```bash
+npm run dev
+```
+
+Runs at: [http://localhost:3000](http://localhost:3000)
+
+---
+
+## 📈 Dashboard Analytics
+
+- Total income and expenses
+- Category-wise charts
+- Weekly/monthly trends
+- Income vs Expense visualizations
+
+---
+
+## 🔐 Auth & RBAC
+
+- JWT authentication system
+- Role-based access control for admin/user separation
+- Secure protected routes
+
+---
+
+## 🧑‍💻 Contributing
+
+```bash
+# Fork → Clone → Create Branch → Commit → Push → PR
+```
+
+```bash
+git checkout -b feature/analytics
+git commit -m "Add analytics route"
+git push origin feature/analytics
+```
+
+---
+
+## 📄 License
+
+MIT © 2025 [Your Name or Organization]
+
+---
+
+## 📬 Contact
+
+For questions/support, reach out at [your-email@example.com](mailto:your-email@example.com)
