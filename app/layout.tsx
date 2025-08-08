@@ -1,16 +1,23 @@
 // frontend/app/layout.tsx
 import '../styles/globals.css';
 import { ReactNode } from 'react';
+import { AuthProvider } from '@/contexts/AuthContext';
+import Navbar from '@/components/Navbar';
 
 export const metadata = {
-  title: 'Personal Finance Tracker',
-  description: 'Track your expenses and income',
+  title: 'Finance Tracker',
+  description: 'Track your finances securely',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AuthProvider>
+          <Navbar />
+          <main className="p-6">{children}</main>
+        </AuthProvider>
+      </body>
     </html>
   );
 }
