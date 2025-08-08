@@ -10,7 +10,7 @@ const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#ffbb28', '#8dd1e1'
 
 type CategoryBreakdown = {
   category: string;
-  total: number | string; // comes as string from DB
+  total: number | string;
 };
 
 type MonthlyTrend = {
@@ -41,7 +41,6 @@ export default function Charts({ analytics, role }: ChartsProps) {
     return <p className="text-gray-500">No category data available to display charts.</p>;
   }
 
-  // 🔄 Ensure numbers are parsed
   const parsedCategoryData = analytics.categoryBreakdown.map(item => ({
     category: item.category,
     total: parseFloat(item.total as string),
@@ -57,25 +56,44 @@ export default function Charts({ analytics, role }: ChartsProps) {
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {/* Pie Chart */}
       <div className="bg-white rounded shadow p-4">
-        <h2 className="text-lg font-semibold mb-2">Expense by Category</h2>
-        <PieChart width={300} height={300}>
-          <Pie
-            data={parsedCategoryData}
-            dataKey="total"
-            nameKey="category"
-            cx="50%"
-            cy="50%"
-            outerRadius={100}
-            label={({ category, percent }: any) =>
-              `${category} (${percent ? (percent * 100).toFixed(0) : 0}%)`
-            }
-          >
-            {parsedCategoryData.map((_, index: number) => (
-              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-            ))}
-          </Pie>
-          <PieTooltip />
-        </PieChart>
+        <h2 className="text-lg font-semibold mb-4">Expense by Category</h2>
+        <div className="flex items-center justify-center h-[350px]">
+          <PieChart width={350} height={350}>
+            <Pie
+              data={parsedCategoryData}
+              dataKey="total"
+              nameKey="category"
+              cx="50%"
+              cy="50%"
+              outerRadius={70}
+              labelLine={false}
+              label={({ cx = 0, cy = 0, midAngle = 0, innerRadius = 0, outerRadius = 0, percent = 0 }) => {
+                const RADIAN = Math.PI / 180;
+                const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+                return (
+                  <text
+                    x={x}
+                    y={y}
+                    fill="white"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={12}
+                  >
+                    {`${(percent * 100).toFixed(0)}%`}
+                  </text>
+                );
+              }}
+            >
+              {parsedCategoryData.map((_, index: number) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <PieTooltip />
+          </PieChart>
+        </div>
       </div>
 
       {/* Line Chart */}
