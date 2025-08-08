@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 interface Transaction {
   id: number;
   title: string;
-  amount: number;
+  amount: number | string;
   type: string;
   category: string;
 }
@@ -18,8 +18,9 @@ export default function TransactionSummary({ transactions }: Props) {
   const totals = useMemo(() => {
     return transactions.reduce(
       (acc, t) => {
-        if (t.type === 'income') acc.income += t.amount;
-        else acc.expense += t.amount;
+        const amount = Number(t.amount);
+        if (t.type === 'income') acc.income += amount;
+        else acc.expense += amount;
         return acc;
       },
       { income: 0, expense: 0 }
@@ -28,8 +29,8 @@ export default function TransactionSummary({ transactions }: Props) {
 
   return (
     <div className="flex justify-between bg-gray-100 p-4 rounded mb-4">
-      <span>💰 Income: ₹{totals.income}</span>
-      <span>🧾 Expenses: ₹{totals.expense}</span>
+      <span>💰 Income: ₹{totals.income.toFixed(2)}</span>
+      <span>🧾 Expenses: ₹{totals.expense.toFixed(2)}</span>
     </div>
   );
 }
