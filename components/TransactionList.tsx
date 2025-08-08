@@ -27,10 +27,9 @@ export default function TransactionList() {
       });
 
       const data = await res.json();
+      console.log('Fetched transaction data:', data); // Debug
 
-      if (Array.isArray(data)) {
-        setTransactions(data);
-      } else if (Array.isArray(data.transactions)) {
+      if (Array.isArray(data.transactions)) {
         setTransactions(data.transactions);
       } else {
         console.error('Unexpected response structure:', data);
@@ -38,6 +37,7 @@ export default function TransactionList() {
       }
     } catch (error) {
       console.error('Error fetching transactions:', error);
+      setTransactions([]);
     }
   };
 
