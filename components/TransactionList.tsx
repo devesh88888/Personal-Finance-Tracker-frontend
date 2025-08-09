@@ -28,7 +28,13 @@ const isNumeric = (v: unknown) =>
   typeof v === 'number' ||
   (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)));
 
-type TxLoose = Omit<Transaction, 'amount'> & { amount: number | string };
+type TxLoose = {
+  id: number | string;       // allow numeric string
+  title: string;
+  amount: number | string;   // allow numeric string
+  type: string;
+  category: string;
+};
 
 const isApiError = (v: unknown): v is ApiError =>
   typeof v === 'object' && v !== null && 'message' in v;
@@ -37,7 +43,7 @@ const isTransactionLoose = (v: unknown): v is TxLoose => {
   if (typeof v !== 'object' || v === null) return false;
   const t = v as Record<string, unknown>;
   return (
-    typeof t.id === 'number' &&
+    isNumeric(t.id) &&
     typeof t.title === 'string' &&
     isNumeric(t.amount) &&
     typeof t.type === 'string' &&
@@ -57,8 +63,11 @@ const isTransactionsEnvelopeLoose = (
   isTransactionArrayLoose((v as { transactions: unknown }).transactions);
 
 const coerceTx = (t: TxLoose): Transaction => ({
-  ...t,
+  id: Number(t.id),
+  title: t.title,
   amount: Number(t.amount),
+  type: t.type,
+  category: t.category,
 });
 /** ------------------------------------------- */
 
@@ -88,25 +97,25 @@ export default function TransactionList() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const raw = await res.text();
+      const ct = res.headers.get('content-type') || '';
       let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
+      if (ct.includes('application/json')) {
+        parsed = await res.json();
+      } else {
         parsed = undefined;
       }
 
       if (process.env.NODE_ENV !== 'production') {
         console.log('[transactions] status:', res.status);
-        console.log('[transactions] content-type:', res.headers.get('content-type'));
-        console.log('[transactions] raw body:', raw);
+        console.log('[transactions] content-type:', ct);
+        console.log('[transactions] parsed body:', parsed);
       }
 
       if (!res.ok) {
         const serverMsg =
           (parsed && isApiError(parsed) && typeof parsed.message === 'string'
             ? parsed.message
-            : undefined) || raw || 'Failed to fetch transactions';
+            : undefined) || 'Failed to fetch transactions';
 
         if (res.status === 401 || res.status === 403) {
           showSnackbar('Session expired. Please sign in again.', 'error');
@@ -159,7 +168,6 @@ export default function TransactionList() {
   const from = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const to = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
 
-  // After the child confirms & deletes on the server, it calls this to update UI
   const performDelete = useCallback(
     (id: number) => {
       setTransactions((prev) => {
@@ -176,7 +184,6 @@ export default function TransactionList() {
   const Row = useCallback(
     ({ index, style }: ListChildComponentProps) => (
       <div style={style}>
-        {/* Child owns the MUI dialog + server delete; parent just updates the list */}
         <TransactionItem transaction={paged[index]} onDelete={performDelete} />
       </div>
     ),
@@ -199,7 +206,6 @@ export default function TransactionList() {
         >
           Prev
         </button>
-
         <div className="flex items-center gap-1">
           {Array.from({ length: Math.min(totalPages, 7) }).map((_, i) => {
             let pageNum: number;
@@ -222,7 +228,6 @@ export default function TransactionList() {
             );
           })}
         </div>
-
         <button
           className="px-2 py-1 border rounded disabled:opacity-50"
           onClick={() => goTo(currentPage + 1)}
@@ -230,7 +235,6 @@ export default function TransactionList() {
         >
           Next
         </button>
-
         <select
           value={pageSize}
           onChange={(e) => {
