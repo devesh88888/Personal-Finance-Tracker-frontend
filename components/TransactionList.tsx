@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSnackbar } from '@/contexts/SnackbarContext';
 import TransactionItem from './TransactionItem';
@@ -11,42 +11,54 @@ interface Transaction {
   id: number;
   title: string;
   amount: number;
-  type: 'income' | 'expense' | string;
+  type: string;
   category: string;
 }
 
-type ApiError = { message?: string };
-
-type TransactionsEnvelope = { transactions: Transaction[] };
-
-function isApiError(v: unknown): v is ApiError {
-  return typeof v === 'object' && v !== null && 'message' in v;
+interface ApiError {
+  message?: string;
 }
 
-function isTransaction(v: unknown): v is Transaction {
+interface TransactionsEnvelope {
+  transactions: Transaction[];
+}
+
+/** ---------- Helpers & Type Guards ---------- */
+const isNumeric = (v: unknown) =>
+  typeof v === 'number' ||
+  (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)));
+
+type TxLoose = Omit<Transaction, 'amount'> & { amount: number | string };
+
+const isApiError = (v: unknown): v is ApiError =>
+  typeof v === 'object' && v !== null && 'message' in v;
+
+const isTransactionLoose = (v: unknown): v is TxLoose => {
   if (typeof v !== 'object' || v === null) return false;
   const t = v as Record<string, unknown>;
   return (
     typeof t.id === 'number' &&
     typeof t.title === 'string' &&
-    typeof t.amount === 'number' &&
+    isNumeric(t.amount) &&
     typeof t.type === 'string' &&
     typeof t.category === 'string'
   );
-}
+};
 
-function isTransactionArray(v: unknown): v is Transaction[] {
-  return Array.isArray(v) && v.every(isTransaction);
-}
+const isTransactionArrayLoose = (v: unknown): v is TxLoose[] =>
+  Array.isArray(v) && v.every(isTransactionLoose);
 
-function isTransactionsEnvelope(v: unknown): v is TransactionsEnvelope {
-  return (
-    typeof v === 'object' &&
-    v !== null &&
-    'transactions' in v &&
-    isTransactionArray((v as { transactions: unknown }).transactions)
-  );
-}
+const isTransactionsEnvelopeLoose = (v: unknown): v is { transactions: TxLoose[] } =>
+  typeof v === 'object' &&
+  v !== null &&
+  'transactions' in v &&
+  isTransactionArrayLoose((v as any).transactions);
+
+const coerceTx = (t: TxLoose): Transaction => ({
+  ...t,
+  amount: Number(t.amount),
+});
+/** ------------------------------------------- */
 
 export default function TransactionList() {
   const { token } = useAuth();
@@ -54,45 +66,71 @@ export default function TransactionList() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Pagination state
+  const hasFetchedRef = useRef(false);
+
+  // Pagination
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
   const fetchTransactions = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      showSnackbar('No auth token. Please sign in.', 'error');
+      setTransactions([]);
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/transactions`, {
+      const url = `${process.env.NEXT_PUBLIC_API_URL}/api/transactions`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const isJson = res.headers.get('content-type')?.includes('application/json') ?? false;
-      const payload: unknown = isJson ? await res.json() : await res.text();
+      const raw = await res.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = undefined;
+      }
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[transactions] status:', res.status);
+        console.log('[transactions] content-type:', res.headers.get('content-type'));
+        console.log('[transactions] raw body:', raw);
+      }
 
       if (!res.ok) {
-        const msg =
-          res.status === 429
-            ? 'Too many requests. Please try again later.'
-            : (isApiError(payload) && payload.message) || 'Failed to fetch transactions';
-        showSnackbar(msg, 'error');
+        const serverMsg =
+          (parsed && isApiError(parsed) && typeof parsed.message === 'string'
+            ? parsed.message
+            : undefined) || raw || 'Failed to fetch transactions';
+
+        if (res.status === 401 || res.status === 403) {
+          showSnackbar('Session expired. Please sign in again.', 'error');
+        } else if (res.status === 429) {
+          showSnackbar(serverMsg || 'Too many requests. Please try again later.', 'error');
+        } else {
+          showSnackbar(serverMsg, 'error');
+        }
         setTransactions([]);
         return;
       }
 
+      // Accept array or { transactions: [] }, allowing numeric strings
       let list: Transaction[] = [];
-      if (isTransactionArray(payload)) {
-        list = payload;
-      } else if (isTransactionsEnvelope(payload)) {
-        list = payload.transactions;
+      if (isTransactionArrayLoose(parsed)) {
+        list = parsed.map(coerceTx);
+      } else if (isTransactionsEnvelopeLoose(parsed)) {
+        list = parsed.transactions.map(coerceTx);
       } else {
-        // Unexpected shape; keep empty and notify
-        showSnackbar('Unexpected response format for transactions', 'error');
-        list = [];
+        showSnackbar('Unexpected response format from /api/transactions', 'error');
       }
 
       setTransactions(list);
-      setPage(1); // reset to first page on new data
-    } catch {
+      setPage(1);
+    } catch (err) {
+      console.error('[transactions] fetch error:', err);
       showSnackbar('Network error while fetching transactions', 'error');
       setTransactions([]);
     } finally {
@@ -101,24 +139,24 @@ export default function TransactionList() {
   }, [token, showSnackbar]);
 
   useEffect(() => {
+    if (hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
     fetchTransactions();
   }, [fetchTransactions]);
 
-  // Derived pagination values
+  // Pagination derived values
   const total = transactions.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
 
   const paged = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    const end = start + pageSize;
-    return transactions.slice(start, end);
+    return transactions.slice(start, start + pageSize);
   }, [transactions, currentPage, pageSize]);
 
   const from = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const to = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
 
-  // Delete handler adjusts page if needed
   const handleDelete = useCallback(
     (id: number) => {
       setTransactions((prev) => {
@@ -131,8 +169,6 @@ export default function TransactionList() {
     },
     [showSnackbar, currentPage, pageSize]
   );
-
-  const itemKey = useCallback((index: number, items: Transaction[]) => items[index].id, []);
 
   const Row = useCallback(
     ({ index, style }: ListChildComponentProps) => (
@@ -218,7 +254,7 @@ export default function TransactionList() {
         <TransactionSummary transactions={transactions} />
         <button
           onClick={fetchTransactions}
-          className="text-sm text-purple-600 hover:underline"
+          className="text-sm text-purple-600 hover:underline disabled:opacity-50"
           disabled={loading}
         >
           {loading ? 'Refreshing…' : 'Refresh'}
@@ -236,7 +272,7 @@ export default function TransactionList() {
             itemCount={paged.length}
             itemSize={72}
             width="100%"
-            itemKey={(index) => itemKey(index, paged)}
+            itemKey={(index) => paged[index].id}
           >
             {Row}
           </List>
