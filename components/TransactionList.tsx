@@ -21,6 +21,10 @@ export default function TransactionList() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // 🔢 Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   const fetchTransactions = useCallback(async () => {
     if (!token) return;
     setLoading(true);
@@ -42,9 +46,6 @@ export default function TransactionList() {
         return;
       }
 
-      // Accept both shapes:
-      // 1) Array of transactions
-      // 2) { transactions: [...] }
       const list = Array.isArray(data)
         ? (data as Transaction[])
         : Array.isArray((data as any)?.transactions)
@@ -52,6 +53,7 @@ export default function TransactionList() {
         : [];
 
       setTransactions(list);
+      setPage(1); // reset to first page on new data
     } catch {
       showSnackbar('Network error while fetching transactions', 'error');
       setTransactions([]);
@@ -64,20 +66,118 @@ export default function TransactionList() {
     fetchTransactions();
   }, [fetchTransactions]);
 
-  const handleDelete = useCallback((id: number) => {
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
-    showSnackbar('Transaction deleted', 'success');
-  }, [showSnackbar]);
+  // ✅ Derived pagination values
+  const total = transactions.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, totalPages);
+
+  const paged = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    return transactions.slice(start, end);
+  }, [transactions, currentPage, pageSize]);
+
+  const from = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const to = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
+
+  // 🗑️ Delete handler adjusts page if needed
+  const handleDelete = useCallback(
+    (id: number) => {
+      setTransactions((prev) => {
+        const next = prev.filter((t) => t.id !== id);
+        const nextTotalPages = Math.max(1, Math.ceil(next.length / pageSize));
+        if (currentPage > nextTotalPages) {
+          setPage(nextTotalPages);
+        }
+        return next;
+      });
+      showSnackbar('Transaction deleted', 'success');
+    },
+    [showSnackbar, currentPage, pageSize]
+  );
 
   const itemKey = useCallback((index: number, items: Transaction[]) => items[index].id, []);
 
   const Row = useCallback(
     ({ index, style }: ListChildComponentProps) => (
       <div style={style}>
-        <TransactionItem transaction={transactions[index]} onDelete={handleDelete} />
+        <TransactionItem transaction={paged[index]} onDelete={handleDelete} />
       </div>
     ),
-    [transactions, handleDelete]
+    [paged, handleDelete]
+  );
+
+  const goTo = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
+
+  // Render small pagination controls
+  const Pagination = () => (
+    <div className="flex items-center justify-between text-sm mt-2">
+      <div className="text-gray-600">
+        Showing <span className="font-medium">{from}</span>–<span className="font-medium">{to}</span> of{' '}
+        <span className="font-medium">{total}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          className="px-2 py-1 border rounded disabled:opacity-50"
+          onClick={() => goTo(currentPage - 1)}
+          disabled={currentPage === 1}
+        >
+          Prev
+        </button>
+
+        {/* Simple page numbers (up to 7 buttons). For larger sets, condense with ellipsis */}
+        <div className="flex items-center gap-1">
+          {Array.from({ length: Math.min(totalPages, 7) }).map((_, i) => {
+            // Window around current page if there are many pages
+            let pageNum: number;
+            if (totalPages <= 7) {
+              pageNum = i + 1;
+            } else {
+              const start = Math.max(1, Math.min(currentPage - 3, totalPages - 6));
+              pageNum = start + i;
+            }
+            return (
+              <button
+                key={pageNum}
+                onClick={() => goTo(pageNum)}
+                className={`px-2 py-1 rounded border ${
+                  currentPage === pageNum ? 'bg-purple-600 text-white border-purple-600' : ''
+                }`}
+              >
+                {pageNum}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          className="px-2 py-1 border rounded disabled:opacity-50"
+          onClick={() => goTo(currentPage + 1)}
+          disabled={currentPage === totalPages}
+        >
+          Next
+        </button>
+
+        <select
+          value={pageSize}
+          onChange={(e) => {
+            const newSize = Number(e.target.value);
+            setPageSize(newSize);
+            // keep the top of current slice visible
+            const firstIndex = (currentPage - 1) * pageSize;
+            const newPage = Math.floor(firstIndex / newSize) + 1;
+            setPage(newPage);
+          }}
+          className="ml-2 border rounded px-2 py-1"
+        >
+          {[10, 20, 50].map((n) => (
+            <option key={n} value={n}>
+              {n} / page
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
   );
 
   return (
@@ -98,15 +198,19 @@ export default function TransactionList() {
       ) : transactions.length === 0 ? (
         <p className="text-gray-500">No transactions yet.</p>
       ) : (
-        <List
-          height={400}
-          itemCount={transactions.length}
-          itemSize={72}
-          width="100%"
-          itemKey={(index) => itemKey(index, transactions)}
-        >
-          {Row}
-        </List>
+        <>
+          {/* Virtualized list for current page only */}
+          <List
+            height={Math.min(400, Math.max(1, paged.length) * 72)} // avoid large empty space on small pages
+            itemCount={paged.length}
+            itemSize={72}
+            width="100%"
+            itemKey={(index) => itemKey(index, paged)}
+          >
+            {Row}
+          </List>
+          <Pagination />
+        </>
       )}
     </div>
   );
