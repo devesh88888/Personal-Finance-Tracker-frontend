@@ -9,6 +9,7 @@ import MuiAlert, { AlertColor } from '@mui/material/Alert';
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const { login } = useAuth();
   const router = useRouter();
 
@@ -16,55 +17,65 @@ export default function LoginPage() {
     open: boolean;
     message: string;
     severity: AlertColor;
-  }>({
-    open: false,
-    message: '',
-    severity: 'success',
-  });
+  }>({ open: false, message: '', severity: 'success' });
 
-  const handleClose = (
-    event?: React.SyntheticEvent | Event,
-    reason?: string
-  ) => {
+  const handleClose = (_?: React.SyntheticEvent | Event, reason?: string) => {
     if (reason === 'clickaway') return;
     setSnackbar((prev) => ({ ...prev, open: false }));
   };
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
 
-    const isJson = res.headers.get('content-type')?.includes('application/json');
-    const data = isJson ? await res.json() : { message: await res.text() };
-
-    if (res.ok) {
-      login(data.user, data.token);
-      setSnackbar({ open: true, message: 'Login successful!', severity: 'success' });
-      setTimeout(() => router.push('/'), 1000);
-    } else {
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (!baseUrl) {
       setSnackbar({
         open: true,
-        message: data.message || 'Login failed',
+        message: 'Missing NEXT_PUBLIC_API_URL. Check your .env.',
         severity: 'error',
       });
+      setSubmitting(false);
+      return;
     }
-  } catch (err) {
-    setSnackbar({
-      open: true,
-      message: 'Login error. Please try again.',
-      severity: 'error',
-    });
-  }
-};
+
+    try {
+      const res = await fetch(`${baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      const data = isJson ? await res.json() : { message: await res.text() };
+
+      if (res.ok) {
+        login(data.user, data.token);
+        setSnackbar({ open: true, message: 'Login successful!', severity: 'success' });
+        setTimeout(() => router.push('/'), 800);
+      } else {
+        const msg =
+          res.status === 429
+            ? 'Too many login attempts. Please try again later.'
+            : data?.message || 'Login failed';
+        setSnackbar({ open: true, message: msg, severity: 'error' });
+      }
+    } catch {
+      setSnackbar({
+        open: true,
+        message: 'Network error. Please try again.',
+        severity: 'error',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="p-6 max-w-md mx-auto">
       <h2 className="text-2xl font-bold mb-4">Login</h2>
+
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <input
           type="email"
@@ -73,6 +84,7 @@ const handleSubmit = async (e: React.FormEvent) => {
           className="border px-3 py-2 rounded"
           placeholder="Email"
           required
+          autoComplete="email"
         />
         <input
           type="password"
@@ -81,12 +93,16 @@ const handleSubmit = async (e: React.FormEvent) => {
           className="border px-3 py-2 rounded"
           placeholder="Password"
           required
+          autoComplete="current-password"
         />
         <button
           type="submit"
-          className="bg-purple-600 text-white py-2 rounded hover:bg-purple-700 transition"
+          disabled={submitting}
+          className={`bg-purple-600 text-white py-2 rounded transition ${
+            submitting ? 'opacity-60 cursor-not-allowed' : 'hover:bg-purple-700'
+          }`}
         >
-          Login
+          {submitting ? 'Logging in…' : 'Login'}
         </button>
       </form>
 
@@ -96,7 +112,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         open={snackbar.open}
         autoHideDuration={4000}
         onClose={handleClose}
-        sx={{ zIndex: 1300 }} // ✅ ensures it shows above Tailwind content
+        sx={{ zIndex: 1300 }}
       >
         <MuiAlert
           elevation={6}
@@ -105,7 +121,7 @@ const handleSubmit = async (e: React.FormEvent) => {
           severity={snackbar.severity}
           sx={{ width: '100%' }}
         >
-          {snackbar.message}
+          <span aria-live="assertive">{snackbar.message}</span>
         </MuiAlert>
       </Snackbar>
     </div>

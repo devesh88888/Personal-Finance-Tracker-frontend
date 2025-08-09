@@ -1,6 +1,6 @@
 'use client';
-
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useSnackbar } from './SnackbarContext'; // ✅ import
 
 interface User {
   id: number;
@@ -19,6 +19,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const { showSnackbar } = useSnackbar(); // ✅ use it here
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
@@ -43,6 +44,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setToken(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    showSnackbar('Logged out successfully', 'success'); // ✅ show toast
   };
 
   return (
