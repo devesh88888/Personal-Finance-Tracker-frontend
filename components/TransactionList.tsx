@@ -48,11 +48,13 @@ const isTransactionLoose = (v: unknown): v is TxLoose => {
 const isTransactionArrayLoose = (v: unknown): v is TxLoose[] =>
   Array.isArray(v) && v.every(isTransactionLoose);
 
-const isTransactionsEnvelopeLoose = (v: unknown): v is { transactions: TxLoose[] } =>
+const isTransactionsEnvelopeLoose = (
+  v: unknown
+): v is { transactions: TxLoose[] } =>
   typeof v === 'object' &&
   v !== null &&
   'transactions' in v &&
-  isTransactionArrayLoose((v as any).transactions);
+  isTransactionArrayLoose((v as { transactions: unknown }).transactions);
 
 const coerceTx = (t: TxLoose): Transaction => ({
   ...t,
