@@ -12,7 +12,7 @@ const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#ffbb28', '#8dd1e1'
 type CategoryBreakdown = { category: string; total: number | string };
 type MonthlyTrend = { month: string; income: number | string; expense: number | string };
 
-type Analytics = {
+export type Analytics = {
   totalIncome: number;
   totalExpense: number;
   balance: number;
@@ -24,7 +24,7 @@ type ChartsProps = { analytics: Analytics; role: string };
 
 export default function Charts({ analytics, role }: ChartsProps) {
   if (!['read-only', 'user', 'admin'].includes(role)) {
-    return <p className="text-gray-500">You don't have access to view analytics.</p>;
+    return <p className="text-gray-500">You don&apos;t have access to view analytics.</p>;
   }
   if (!analytics?.categoryBreakdown?.length) {
     return <p className="text-gray-500">No category data available to display charts.</p>;
@@ -56,7 +56,7 @@ export default function Charts({ analytics, role }: ChartsProps) {
                 cx="50%"
                 cy="50%"
                 innerRadius="40%"
-                outerRadius="70%"       // percent radius keeps it inside box
+                outerRadius="70%"  // keep inside card
                 labelLine={false}
                 label={({ percent = 0 }) =>
                   percent < 0.05 ? '' : `${(percent * 100).toFixed(0)}%`
@@ -79,8 +79,7 @@ export default function Charts({ analytics, role }: ChartsProps) {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={parsedMonthlyTrends}
-              // Extra padding so y-axis ticks & legend never clip
-              margin={{ top: 20, right: 30, left: 50, bottom: 25 }}
+              margin={{ top: 20, right: 30, left: 50, bottom: 25 }} // avoid clipping
             >
               <XAxis dataKey="month" />
               <YAxis />
@@ -107,7 +106,6 @@ export default function Charts({ analytics, role }: ChartsProps) {
                   totalExpense: analytics.totalExpense,
                 },
               ]}
-              // Give room for y ticks and legend
               margin={{ top: 20, right: 30, left: 50, bottom: 25 }}
             >
               <XAxis dataKey="label" />

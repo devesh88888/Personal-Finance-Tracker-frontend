@@ -11,8 +11,41 @@ interface Transaction {
   id: number;
   title: string;
   amount: number;
-  type: string;
+  type: 'income' | 'expense' | string;
   category: string;
+}
+
+type ApiError = { message?: string };
+
+type TransactionsEnvelope = { transactions: Transaction[] };
+
+function isApiError(v: unknown): v is ApiError {
+  return typeof v === 'object' && v !== null && 'message' in v;
+}
+
+function isTransaction(v: unknown): v is Transaction {
+  if (typeof v !== 'object' || v === null) return false;
+  const t = v as Record<string, unknown>;
+  return (
+    typeof t.id === 'number' &&
+    typeof t.title === 'string' &&
+    typeof t.amount === 'number' &&
+    typeof t.type === 'string' &&
+    typeof t.category === 'string'
+  );
+}
+
+function isTransactionArray(v: unknown): v is Transaction[] {
+  return Array.isArray(v) && v.every(isTransaction);
+}
+
+function isTransactionsEnvelope(v: unknown): v is TransactionsEnvelope {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'transactions' in v &&
+    isTransactionArray((v as { transactions: unknown }).transactions)
+  );
 }
 
 export default function TransactionList() {
@@ -21,7 +54,7 @@ export default function TransactionList() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // 🔢 Pagination state
+  // Pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -33,24 +66,29 @@ export default function TransactionList() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const isJson = res.headers.get('content-type')?.includes('application/json');
-      const data = isJson ? await res.json() : await res.text();
+      const isJson = res.headers.get('content-type')?.includes('application/json') ?? false;
+      const payload: unknown = isJson ? await res.json() : await res.text();
 
       if (!res.ok) {
         const msg =
           res.status === 429
             ? 'Too many requests. Please try again later.'
-            : (isJson && (data as any)?.message) || 'Failed to fetch transactions';
+            : (isApiError(payload) && payload.message) || 'Failed to fetch transactions';
         showSnackbar(msg, 'error');
         setTransactions([]);
         return;
       }
 
-      const list = Array.isArray(data)
-        ? (data as Transaction[])
-        : Array.isArray((data as any)?.transactions)
-        ? ((data as any).transactions as Transaction[])
-        : [];
+      let list: Transaction[] = [];
+      if (isTransactionArray(payload)) {
+        list = payload;
+      } else if (isTransactionsEnvelope(payload)) {
+        list = payload.transactions;
+      } else {
+        // Unexpected shape; keep empty and notify
+        showSnackbar('Unexpected response format for transactions', 'error');
+        list = [];
+      }
 
       setTransactions(list);
       setPage(1); // reset to first page on new data
@@ -66,7 +104,7 @@ export default function TransactionList() {
     fetchTransactions();
   }, [fetchTransactions]);
 
-  // ✅ Derived pagination values
+  // Derived pagination values
   const total = transactions.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -80,15 +118,13 @@ export default function TransactionList() {
   const from = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const to = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
 
-  // 🗑️ Delete handler adjusts page if needed
+  // Delete handler adjusts page if needed
   const handleDelete = useCallback(
     (id: number) => {
       setTransactions((prev) => {
         const next = prev.filter((t) => t.id !== id);
         const nextTotalPages = Math.max(1, Math.ceil(next.length / pageSize));
-        if (currentPage > nextTotalPages) {
-          setPage(nextTotalPages);
-        }
+        if (currentPage > nextTotalPages) setPage(nextTotalPages);
         return next;
       });
       showSnackbar('Transaction deleted', 'success');
@@ -109,7 +145,6 @@ export default function TransactionList() {
 
   const goTo = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
 
-  // Render small pagination controls
   const Pagination = () => (
     <div className="flex items-center justify-between text-sm mt-2">
       <div className="text-gray-600">
@@ -125,10 +160,8 @@ export default function TransactionList() {
           Prev
         </button>
 
-        {/* Simple page numbers (up to 7 buttons). For larger sets, condense with ellipsis */}
         <div className="flex items-center gap-1">
           {Array.from({ length: Math.min(totalPages, 7) }).map((_, i) => {
-            // Window around current page if there are many pages
             let pageNum: number;
             if (totalPages <= 7) {
               pageNum = i + 1;
@@ -163,7 +196,6 @@ export default function TransactionList() {
           onChange={(e) => {
             const newSize = Number(e.target.value);
             setPageSize(newSize);
-            // keep the top of current slice visible
             const firstIndex = (currentPage - 1) * pageSize;
             const newPage = Math.floor(firstIndex / newSize) + 1;
             setPage(newPage);
@@ -199,9 +231,8 @@ export default function TransactionList() {
         <p className="text-gray-500">No transactions yet.</p>
       ) : (
         <>
-          {/* Virtualized list for current page only */}
           <List
-            height={Math.min(400, Math.max(1, paged.length) * 72)} // avoid large empty space on small pages
+            height={Math.min(400, Math.max(1, paged.length) * 72)}
             itemCount={paged.length}
             itemSize={72}
             width="100%"
