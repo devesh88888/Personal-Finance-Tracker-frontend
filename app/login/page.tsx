@@ -40,11 +40,13 @@ export default function LoginPage() {
       return;
     }
 
+    const payload = { email: email.trim().toLowerCase(), password };
+
     try {
       const res = await fetch(`${baseUrl}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(payload),
       });
 
       const isJson = res.headers.get('content-type')?.includes('application/json');
@@ -72,6 +74,8 @@ export default function LoginPage() {
     }
   };
 
+  const disabled = submitting || !email.trim() || !password;
+
   return (
     <div className="p-6 max-w-md mx-auto">
       <h2 className="text-2xl font-bold mb-4">Login</h2>
@@ -97,16 +101,15 @@ export default function LoginPage() {
         />
         <button
           type="submit"
-          disabled={submitting}
+          disabled={disabled}
           className={`bg-purple-600 text-white py-2 rounded transition ${
-            submitting ? 'opacity-60 cursor-not-allowed' : 'hover:bg-purple-700'
+            disabled ? 'opacity-60 cursor-not-allowed' : 'hover:bg-purple-700'
           }`}
         >
           {submitting ? 'Logging in…' : 'Login'}
         </button>
       </form>
 
-      {/* Snackbar Notification */}
       <Snackbar
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         open={snackbar.open}

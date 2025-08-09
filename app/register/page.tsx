@@ -14,17 +14,14 @@ export default function RegisterPage() {
     password: '',
     role: 'user',
   });
+  const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
 
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
     severity: AlertColor;
-  }>({
-    open: false,
-    message: '',
-    severity: 'success',
-  });
+  }>({ open: false, message: '', severity: 'success' });
 
   const handleClose = (_e?: React.SyntheticEvent | Event, reason?: string) => {
     if (reason === 'clickaway') return;
@@ -33,18 +30,31 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
 
-    // simple front-end guard
+    // simple client-side guards
+    if (!form.name.trim() || !form.email.trim()) {
+      setSnackbar({ open: true, message: 'Name and email are required', severity: 'error' });
+      return;
+    }
     if (form.password.length < 6) {
       setSnackbar({ open: true, message: 'Password must be at least 6 characters', severity: 'error' });
       return;
     }
 
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (!baseUrl) {
+      setSnackbar({ open: true, message: 'Missing NEXT_PUBLIC_API_URL. Check your .env.', severity: 'error' });
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register`, {
+      const res = await fetch(`${baseUrl}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        // normalize role defensively
+        body: JSON.stringify({ ...form, role: (form.role || 'user').toLowerCase() as Role }),
       });
 
       const isJson = res.headers.get('content-type')?.includes('application/json');
@@ -52,20 +62,18 @@ export default function RegisterPage() {
 
       if (res.ok) {
         setSnackbar({ open: true, message: 'Registered! Please login.', severity: 'success' });
-        setTimeout(() => router.push('/login'), 1000);
+        setTimeout(() => router.push('/login'), 800);
       } else {
-        setSnackbar({
-          open: true,
-          message: payload.message || 'Registration failed',
-          severity: 'error',
-        });
+        const msg =
+          res.status === 429
+            ? 'Too many attempts. Please try again later.'
+            : payload?.message || 'Registration failed';
+        setSnackbar({ open: true, message: msg, severity: 'error' });
       }
-    } catch (err) {
-      setSnackbar({
-        open: true,
-        message: 'Registration error. Please try again.',
-        severity: 'error',
-      });
+    } catch {
+      setSnackbar({ open: true, message: 'Registration error. Please try again.', severity: 'error' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -81,6 +89,7 @@ export default function RegisterPage() {
           className="border px-3 py-2 rounded"
           placeholder="Name"
           required
+          autoComplete="name"
         />
 
         <input
@@ -90,6 +99,7 @@ export default function RegisterPage() {
           className="border px-3 py-2 rounded"
           placeholder="Email"
           required
+          autoComplete="email"
         />
 
         <input
@@ -99,9 +109,9 @@ export default function RegisterPage() {
           className="border px-3 py-2 rounded"
           placeholder="Password (min 6 chars)"
           required
+          autoComplete="new-password"
         />
 
-        {/* Role selector (optional, defaults to 'user') */}
         <select
           value={form.role}
           onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
@@ -112,8 +122,14 @@ export default function RegisterPage() {
           <option value="admin">Admin</option>
         </select>
 
-        <button type="submit" className="bg-purple-600 text-white py-2 rounded hover:bg-purple-700 transition">
-          Register
+        <button
+          type="submit"
+          disabled={submitting}
+          className={`bg-purple-600 text-white py-2 rounded ${
+            submitting ? 'opacity-60 cursor-not-allowed' : 'hover:bg-purple-700 transition'
+          }`}
+        >
+          {submitting ? 'Registering…' : 'Register'}
         </button>
       </form>
 
@@ -126,7 +142,7 @@ export default function RegisterPage() {
         sx={{ zIndex: 1300 }}
       >
         <MuiAlert elevation={6} variant="filled" onClose={handleClose} severity={snackbar.severity} sx={{ width: '100%' }}>
-          {snackbar.message}
+          <span aria-live="assertive">{snackbar.message}</span>
         </MuiAlert>
       </Snackbar>
     </div>

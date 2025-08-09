@@ -1,17 +1,18 @@
 'use client';
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useSnackbar } from './SnackbarContext'; // ✅ import
+import { useSnackbar } from './SnackbarContext';
 
 interface User {
   id: number;
   name: string;
   email: string;
-  role: string;
+  role: string; // admin | user | read-only
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
+  loaded: boolean;                 // ✅ hydration flag
   login: (user: User, token: string) => void;
   logout: () => void;
 }
@@ -19,24 +20,41 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const { showSnackbar } = useSnackbar(); // ✅ use it here
+  const { showSnackbar } = useSnackbar();
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);      // ✅
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
+    try {
+      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+      if (storedToken && storedUser) {
+        setToken(storedToken);
+        const parsed = JSON.parse(storedUser) as User;
+        const normalized: User = {
+          ...parsed,
+          role: typeof parsed.role === 'string' ? parsed.role.trim().toLowerCase() : 'user',
+        };
+        setUser(normalized);
+      }
+    } catch {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    } finally {
+      setLoaded(true);                               // ✅ signal hydration complete
     }
   }, []);
 
-  const login = (user: User, token: string) => {
-    setUser(user);
-    setToken(token);
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
+  const login = (u: User, t: string) => {
+    const normalized: User = {
+      ...u,
+      role: typeof u.role === 'string' ? u.role.trim().toLowerCase() : 'user', // ✅ normalize
+    };
+    setUser(normalized);
+    setToken(t);
+    localStorage.setItem('token', t);
+    localStorage.setItem('user', JSON.stringify(normalized));
   };
 
   const logout = () => {
@@ -44,11 +62,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setToken(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    showSnackbar('Logged out successfully', 'success'); // ✅ show toast
+    showSnackbar('Logged out successfully', 'success');
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loaded, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
