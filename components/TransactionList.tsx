@@ -122,9 +122,9 @@ export default function TransactionList() {
       // Accept array or { transactions: [] }, allowing numeric strings
       let list: Transaction[] = [];
       if (isTransactionArrayLoose(parsed)) {
-        list = parsed.map(coerceTx);
+        list = (parsed as TxLoose[]).map(coerceTx);
       } else if (isTransactionsEnvelopeLoose(parsed)) {
-        list = parsed.transactions.map(coerceTx);
+        list = (parsed as { transactions: TxLoose[] }).transactions.map(coerceTx);
       } else {
         showSnackbar('Unexpected response format from /api/transactions', 'error');
       }
@@ -159,7 +159,8 @@ export default function TransactionList() {
   const from = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const to = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
 
-  const handleDelete = useCallback(
+  // After the child confirms & deletes on the server, it calls this to update UI
+  const performDelete = useCallback(
     (id: number) => {
       setTransactions((prev) => {
         const next = prev.filter((t) => t.id !== id);
@@ -175,10 +176,11 @@ export default function TransactionList() {
   const Row = useCallback(
     ({ index, style }: ListChildComponentProps) => (
       <div style={style}>
-        <TransactionItem transaction={paged[index]} onDelete={handleDelete} />
+        {/* Child owns the MUI dialog + server delete; parent just updates the list */}
+        <TransactionItem transaction={paged[index]} onDelete={performDelete} />
       </div>
     ),
-    [paged, handleDelete]
+    [paged, performDelete]
   );
 
   const goTo = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));

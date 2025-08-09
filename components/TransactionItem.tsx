@@ -3,6 +3,14 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSnackbar } from '@/contexts/SnackbarContext';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Button,
+} from '@mui/material';
 
 interface Transaction {
   id: number;
@@ -20,17 +28,24 @@ interface Props {
 export default function TransactionItem({ transaction, onDelete }: Props) {
   const { token, user } = useAuth();
   const { showSnackbar } = useSnackbar();
-  const [deleting, setDeleting] = useState(false);
 
-  const handleDelete = useCallback(async () => {
+  const [deleting, setDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const openConfirm = useCallback(() => {
     if (user?.role === 'read-only') {
       showSnackbar('Read-only users cannot delete transactions', 'error');
       return;
     }
-    if (deleting) return;
+    setConfirmOpen(true);
+  }, [user?.role, showSnackbar]);
 
-    const confirm = window.confirm(`Delete "${transaction.title}"?`);
-    if (!confirm) return;
+  const closeConfirm = useCallback(() => {
+    if (!deleting) setConfirmOpen(false);
+  }, [deleting]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (deleting) return;
 
     setDeleting(true);
     try {
@@ -51,19 +66,20 @@ export default function TransactionItem({ transaction, onDelete }: Props) {
             ? 'You do not have permission to delete this.'
             : res.status === 429
             ? 'Too many requests. Please try again later.'
-            : data?.message || 'Delete failed';
+            : (data as { message?: string })?.message || 'Delete failed';
         showSnackbar(msg, 'error');
         return;
       }
 
       onDelete(transaction.id);
       showSnackbar('Transaction deleted', 'success');
+      setConfirmOpen(false);
     } catch {
       showSnackbar('Network error. Please try again.', 'error');
     } finally {
       setDeleting(false);
     }
-  }, [user?.role, deleting, token, transaction.id, transaction.title, onDelete, showSnackbar]);
+  }, [deleting, token, transaction.id, onDelete, showSnackbar]);
 
   return (
     <div className="flex justify-between items-center border-b py-2">
@@ -75,16 +91,42 @@ export default function TransactionItem({ transaction, onDelete }: Props) {
       </div>
 
       {user?.role !== 'read-only' && (
-        <button
-          onClick={handleDelete}
+        <Button
+          onClick={openConfirm}
           disabled={deleting}
-          className={`text-red-600 hover:underline ${
-            deleting ? 'opacity-60 cursor-not-allowed' : ''
-          }`}
+          color="error"
+          variant="text"
+          sx={{ textTransform: 'none' }}
         >
           {deleting ? 'Deleting…' : 'Delete'}
-        </button>
+        </Button>
       )}
+
+      <Dialog
+        open={confirmOpen}
+        onClose={closeConfirm}
+        aria-labelledby="delete-transaction-title"
+      >
+        <DialogTitle id="delete-transaction-title">Delete transaction?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete “{transaction.title}”? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeConfirm} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmDelete}
+            disabled={deleting}
+            color="error"
+            variant="contained"
+          >
+            {deleting ? 'Deleting…' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }
