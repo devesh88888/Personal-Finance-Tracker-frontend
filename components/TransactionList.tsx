@@ -19,64 +19,33 @@ interface ApiError {
   message?: string;
 }
 
-interface TransactionsEnvelope {
-  transactions: Transaction[];
-}
-
-/** ---------- Helpers & Type Guards ---------- */
+/** ---------- Helpers ---------- */
 const isNumeric = (v: unknown) =>
   typeof v === 'number' ||
   (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)));
 
 type TxLoose = {
-  id: number | string;       // allow numeric string
+  id: number | string;
   title: string;
-  amount: number | string;   // allow numeric string
+  amount: number | string;
   type: string;
   category: string;
 };
 
-const isApiError = (v: unknown): v is ApiError =>
-  typeof v === 'object' && v !== null && 'message' in v;
-
-const isTransactionLoose = (v: unknown): v is TxLoose => {
-  if (typeof v !== 'object' || v === null) return false;
-  const t = v as Record<string, unknown>;
-  return (
-    isNumeric(t.id) &&
-    typeof t.title === 'string' &&
-    isNumeric(t.amount) &&
-    typeof t.type === 'string' &&
-    typeof t.category === 'string'
-  );
-};
-
-const isTransactionArrayLoose = (v: unknown): v is TxLoose[] =>
-  Array.isArray(v) && v.every(isTransactionLoose);
-
-const isTransactionsEnvelopeLoose = (
-  v: unknown
-): v is { transactions: TxLoose[] } =>
-  typeof v === 'object' &&
-  v !== null &&
-  'transactions' in v &&
-  isTransactionArrayLoose((v as { transactions: unknown }).transactions);
-
 const coerceTx = (t: TxLoose): Transaction => ({
   id: Number(t.id),
-  title: t.title,
+  title: String(t.title ?? ''),
   amount: Number(t.amount),
-  type: t.type,
-  category: t.category,
+  type: String(t.type ?? ''),
+  category: String(t.category ?? ''),
 });
-/** ------------------------------------------- */
+/** -------------------------------- */
 
 export default function TransactionList() {
   const { token } = useAuth();
   const { showSnackbar } = useSnackbar();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
-
   const hasFetchedRef = useRef(false);
 
   // Pagination
@@ -92,51 +61,46 @@ export default function TransactionList() {
 
     setLoading(true);
     try {
-      const url = `${process.env.NEXT_PUBLIC_API_URL}/api/transactions`;
+      const base = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
+      const url = `${base}/api/transactions`;
+
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       const ct = res.headers.get('content-type') || '';
-      let parsed: unknown;
-      if (ct.includes('application/json')) {
-        parsed = await res.json();
-      } else {
-        parsed = undefined;
-      }
-
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[transactions] status:', res.status);
-        console.log('[transactions] content-type:', ct);
-        console.log('[transactions] parsed body:', parsed);
-      }
-
       if (!res.ok) {
-        const serverMsg =
-          (parsed && isApiError(parsed) && typeof parsed.message === 'string'
-            ? parsed.message
-            : undefined) || 'Failed to fetch transactions';
-
-        if (res.status === 401 || res.status === 403) {
-          showSnackbar('Session expired. Please sign in again.', 'error');
-        } else if (res.status === 429) {
-          showSnackbar(serverMsg || 'Too many requests. Please try again later.', 'error');
+        let msg: string | undefined;
+        if (ct.includes('application/json')) {
+          try {
+            const err = await res.json();
+            msg = err?.message;
+          } catch {}
         } else {
-          showSnackbar(serverMsg, 'error');
+          msg = await res.text();
         }
+        showSnackbar(msg || `Failed to fetch transactions (${res.status})`, 'error');
         setTransactions([]);
         return;
       }
 
-      // Accept array or { transactions: [] }, allowing numeric strings
-      let list: Transaction[] = [];
-      if (isTransactionArrayLoose(parsed)) {
-        list = (parsed as TxLoose[]).map(coerceTx);
-      } else if (isTransactionsEnvelopeLoose(parsed)) {
-        list = (parsed as { transactions: TxLoose[] }).transactions.map(coerceTx);
-      } else {
-        showSnackbar('Unexpected response format from /api/transactions', 'error');
-      }
+      let parsed: any = ct.includes('application/json') ? await res.json() : {};
+      const rawList: any[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.transactions)
+        ? parsed.transactions
+        : [];
+
+      const list: Transaction[] = rawList
+        .filter(
+          (t) =>
+            isNumeric(t.id) &&
+            typeof t.title === 'string' &&
+            isNumeric(t.amount) &&
+            typeof t.type === 'string' &&
+            typeof t.category === 'string'
+        )
+        .map(coerceTx);
 
       setTransactions(list);
       setPage(1);
@@ -206,6 +170,7 @@ export default function TransactionList() {
         >
           Prev
         </button>
+
         <div className="flex items-center gap-1">
           {Array.from({ length: Math.min(totalPages, 7) }).map((_, i) => {
             let pageNum: number;
@@ -228,6 +193,7 @@ export default function TransactionList() {
             );
           })}
         </div>
+
         <button
           className="px-2 py-1 border rounded disabled:opacity-50"
           onClick={() => goTo(currentPage + 1)}
@@ -235,6 +201,7 @@ export default function TransactionList() {
         >
           Next
         </button>
+
         <select
           value={pageSize}
           onChange={(e) => {
@@ -290,3 +257,4 @@ export default function TransactionList() {
     </div>
   );
 }
+
