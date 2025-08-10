@@ -15,43 +15,19 @@ interface Transaction {
   category: string;
 }
 
-interface ApiError {
-  message?: string;
-}
-
-/** ---------- Helpers ---------- */
-const isNumeric = (v: unknown) =>
-  typeof v === 'number' ||
-  (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)));
-
-type TxLoose = {
-  id: number | string;
-  title: string;
-  amount: number | string;
-  type: string;
-  category: string;
-};
-
-const coerceTx = (t: TxLoose): Transaction => ({
-  id: Number(t.id),
-  title: String(t.title ?? ''),
-  amount: Number(t.amount),
-  type: String(t.type ?? ''),
-  category: String(t.category ?? ''),
-});
-/** -------------------------------- */
-
 export default function TransactionList() {
   const { token } = useAuth();
   const { showSnackbar } = useSnackbar();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
+
   const hasFetchedRef = useRef(false);
 
   // Pagination
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  /** -------- Fetch transactions (tolerant) -------- */
   const fetchTransactions = useCallback(async () => {
     if (!token) {
       showSnackbar('No auth token. Please sign in.', 'error');
@@ -70,38 +46,30 @@ export default function TransactionList() {
 
       const ct = res.headers.get('content-type') || '';
       if (!res.ok) {
-        let msg: string | undefined;
-        if (ct.includes('application/json')) {
-          try {
-            const err = await res.json();
-            msg = err?.message;
-          } catch {}
-        } else {
-          msg = await res.text();
-        }
+        const msg = ct.includes('application/json')
+          ? (await res.json())?.message
+          : await res.text();
         showSnackbar(msg || `Failed to fetch transactions (${res.status})`, 'error');
         setTransactions([]);
         return;
       }
 
-      let parsed: any = ct.includes('application/json') ? await res.json() : {};
-      const rawList: any[] = Array.isArray(parsed)
-        ? parsed
-        : Array.isArray(parsed.transactions)
-        ? parsed.transactions
+      const data: any = ct.includes('application/json') ? await res.json() : {};
+      const raw: any[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data.transactions)
+        ? data.transactions
         : [];
 
-      const list: Transaction[] = rawList
-        .filter(
-          (t) =>
-            isNumeric(t.id) &&
-            typeof t.title === 'string' &&
-            isNumeric(t.amount) &&
-            typeof t.type === 'string' &&
-            typeof t.category === 'string'
-        )
-        .map(coerceTx);
+      const list = raw.map((t) => ({
+        id: Number(t.id),
+        title: String(t.title ?? ''),
+        amount: Number(t.amount),
+        type: String(t.type ?? ''),
+        category: String(t.category ?? ''),
+      }));
 
+      console.log('[transactions] loaded:', list.length);
       setTransactions(list);
       setPage(1);
     } catch (err) {
@@ -112,6 +80,7 @@ export default function TransactionList() {
       setLoading(false);
     }
   }, [token, showSnackbar]);
+  /** ---------------------------------------------- */
 
   useEffect(() => {
     if (hasFetchedRef.current) return;
@@ -257,4 +226,3 @@ export default function TransactionList() {
     </div>
   );
 }
-
