@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSnackbar } from '@/contexts/SnackbarContext';
 
 interface Props {
-  onAdd: () => void;
+  onAdd: () => void; // parent should refetch on success
 }
 
 export default function TransactionForm({ onAdd }: Props) {
@@ -15,7 +15,7 @@ export default function TransactionForm({ onAdd }: Props) {
   const [form, setForm] = useState({
     title: '',
     amount: '',
-    type: 'expense',
+    type: 'expense' as 'expense' | 'income',
     category: '',
   });
 
@@ -23,20 +23,33 @@ export default function TransactionForm({ onAdd }: Props) {
     e.preventDefault();
     if (submitting) return;
 
+    if (!token) {
+      showSnackbar('You need to sign in first', 'error');
+      return;
+    }
     if (user?.role === 'read-only') {
       showSnackbar('Read-only users cannot add transactions', 'error');
       return;
     }
 
-    const amountNum = parseFloat(form.amount);
-    if (Number.isNaN(amountNum) || amountNum <= 0) {
+    const amountNum = Number(form.amount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
       showSnackbar('Please enter a valid amount greater than 0', 'error');
       return;
     }
 
+    const base = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
+    const url = `${base}/api/transactions`;
+
+    // tracer: confirm this form is the one sending the request
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.log('[TransactionForm] POST', url);
+    }
+
     setSubmitting(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/transactions`, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -50,28 +63,33 @@ export default function TransactionForm({ onAdd }: Props) {
         }),
       });
 
-      const isJson = res.headers.get('content-type')?.includes('application/json');
-      const data = isJson ? await res.json() : { message: await res.text() };
-
+      const ct = res.headers.get('content-type') || '';
       if (!res.ok) {
-        const message =
-          res.status === 429
-            ? 'Too many requests. Please try again later.'
-            : data?.message || 'Failed to add transaction';
-        showSnackbar(message, 'error');
+        let message: string | undefined;
+        if (ct.includes('application/json')) {
+          try {
+            const body = (await res.json()) as { message?: string };
+            message = body?.message;
+          } catch { /* ignore */ }
+        } else {
+          try {
+            message = await res.text();
+          } catch { /* ignore */ }
+        }
+        showSnackbar(message || `Failed to add transaction (${res.status})`, 'error');
         return;
       }
 
-      // Success
+      // success
       setForm({ title: '', amount: '', type: 'expense', category: '' });
       showSnackbar('Transaction added!', 'success');
-      onAdd(); // refresh list
+      onAdd(); // parent refetches list
     } catch {
       showSnackbar('Network error. Please try again.', 'error');
     } finally {
       setSubmitting(false);
     }
-  }, [form, token, user?.role, submitting, onAdd, showSnackbar]);
+  }, [form, token, user?.role, submitting, showSnackbar, onAdd]);
 
   const disabled = user?.role === 'read-only' || submitting;
 
@@ -103,7 +121,7 @@ export default function TransactionForm({ onAdd }: Props) {
       <div className="flex gap-4">
         <select
           value={form.type}
-          onChange={(e) => setForm({ ...form, type: e.target.value })}
+          onChange={(e) => setForm({ ...form, type: e.target.value as 'expense' | 'income' })}
           className="border px-3 py-2 rounded w-full"
           disabled={disabled}
         >

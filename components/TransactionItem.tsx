@@ -46,32 +46,52 @@ export default function TransactionItem({ transaction, onDelete }: Props) {
 
   const handleConfirmDelete = useCallback(async () => {
     if (deleting) return;
+    if (!token) {
+      showSnackbar('You need to sign in first', 'error');
+      return;
+    }
+
+    const base = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
+    const url = `${base}/api/transactions/${transaction.id}`;
+
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.log('[TransactionItem] DELETE', url);
+    }
 
     setDeleting(true);
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/transactions/${transaction.id}`,
-        {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      const isJson = res.headers.get('content-type')?.includes('application/json');
-      const data = isJson ? await res.json() : { message: await res.text() };
-
+      const ct = res.headers.get('content-type') || '';
       if (!res.ok) {
-        const msg =
+        let message: string | undefined;
+        if (ct.includes('application/json')) {
+          try {
+            const body = (await res.json()) as { message?: string };
+            message = body?.message;
+          } catch { /* ignore parse error */ }
+        } else {
+          try {
+            message = await res.text();
+          } catch { /* ignore text error */ }
+        }
+
+        const friendly =
           res.status === 403
             ? 'You do not have permission to delete this.'
             : res.status === 429
             ? 'Too many requests. Please try again later.'
-            : (data as { message?: string })?.message || 'Delete failed';
-        showSnackbar(msg, 'error');
+            : message || `Delete failed (${res.status})`;
+
+        showSnackbar(friendly, 'error');
         return;
       }
 
-      onDelete(transaction.id);
+      onDelete(transaction.id); // update UI
       showSnackbar('Transaction deleted', 'success');
       setConfirmOpen(false);
     } catch {
@@ -79,7 +99,7 @@ export default function TransactionItem({ transaction, onDelete }: Props) {
     } finally {
       setDeleting(false);
     }
-  }, [deleting, token, transaction.id, onDelete, showSnackbar]);
+  }, [deleting, token, transaction.id, showSnackbar, onDelete]);
 
   return (
     <div className="flex justify-between items-center border-b py-2">

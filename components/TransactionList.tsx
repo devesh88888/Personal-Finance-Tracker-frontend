@@ -43,7 +43,7 @@ const toString = (v: unknown): string =>
 /* ------------------------------------------------ */
 
 export default function TransactionList() {
-  const { token } = useAuth();
+  const { token, loaded } = useAuth(); // 👈 use loaded guard
   const { showSnackbar } = useSnackbar();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -57,6 +57,7 @@ export default function TransactionList() {
 
   /** -------- Fetch transactions (tolerant, no `any`) -------- */
   const fetchTransactions = useCallback(async () => {
+    if (!loaded) return; // 👈 wait for hydration
     if (!token) {
       showSnackbar('No auth token. Please sign in.', 'error');
       setTransactions([]);
@@ -67,6 +68,12 @@ export default function TransactionList() {
     try {
       const base = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
       const url = `${base}/api/transactions`;
+
+      if (process.env.NODE_ENV !== 'production') {
+        // tracer: confirm which file fires the request
+        // eslint-disable-next-line no-console
+        console.log('[TransactionList] GET', url);
+      }
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -81,7 +88,7 @@ export default function TransactionList() {
             const errJson = (await res.json()) as { message?: string };
             message = errJson?.message;
           } catch {
-            // ignore
+            /* ignore */
           }
         } else {
           message = await res.text();
@@ -110,8 +117,6 @@ export default function TransactionList() {
       setTransactions(list);
       setPage(1);
     } catch (err) {
-      // keep this generic to avoid leaking errors to the UI
-      // but log for debugging
       // eslint-disable-next-line no-console
       console.error('[transactions] fetch error:', err);
       showSnackbar('Network error while fetching transactions', 'error');
@@ -119,14 +124,15 @@ export default function TransactionList() {
     } finally {
       setLoading(false);
     }
-  }, [token, showSnackbar]);
+  }, [loaded, token, showSnackbar]);
   /** -------------------------------------------------------- */
 
   useEffect(() => {
+    if (!loaded) return;                // 👈 wait for hydration
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
     fetchTransactions();
-  }, [fetchTransactions]);
+  }, [loaded, fetchTransactions]);
 
   // Pagination derived values
   const total = transactions.length;
@@ -231,6 +237,10 @@ export default function TransactionList() {
       </div>
     </div>
   );
+
+  if (!loaded) {
+    return <p className="text-gray-500">Loading…</p>;
+  }
 
   return (
     <div className="space-y-3">
