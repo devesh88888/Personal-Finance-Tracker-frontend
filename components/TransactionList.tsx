@@ -15,9 +15,37 @@ interface Transaction {
   category: string;
 }
 
+/* ---------- Loose API typing (no `any`) ---------- */
+type ApiTxUnknown = Record<string, unknown>;
+type ApiTxArray = ApiTxUnknown[];
+type ApiEnvelope = { transactions: ApiTxArray };
+
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null;
+
+const isApiTxUnknown = (v: unknown): v is ApiTxUnknown => isObject(v);
+
+const isApiTxArray = (v: unknown): v is ApiTxArray =>
+  Array.isArray(v) && v.every(isApiTxUnknown);
+
+const isApiEnvelope = (v: unknown): v is ApiEnvelope =>
+  isObject(v) && 'transactions' in v && isApiTxArray((v as { transactions: unknown }).transactions);
+
+const toNumber = (v: unknown): number =>
+  typeof v === 'number'
+    ? v
+    : typeof v === 'string' && v.trim() !== ''
+    ? Number(v)
+    : 0;
+
+const toString = (v: unknown): string =>
+  typeof v === 'string' ? v : String(v ?? '');
+/* ------------------------------------------------ */
+
 export default function TransactionList() {
   const { token } = useAuth();
   const { showSnackbar } = useSnackbar();
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -27,7 +55,7 @@ export default function TransactionList() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  /** -------- Fetch transactions (tolerant) -------- */
+  /** -------- Fetch transactions (tolerant, no `any`) -------- */
   const fetchTransactions = useCallback(async () => {
     if (!token) {
       showSnackbar('No auth token. Please sign in.', 'error');
@@ -45,34 +73,46 @@ export default function TransactionList() {
       });
 
       const ct = res.headers.get('content-type') || '';
+
       if (!res.ok) {
-        const msg = ct.includes('application/json')
-          ? (await res.json())?.message
-          : await res.text();
-        showSnackbar(msg || `Failed to fetch transactions (${res.status})`, 'error');
+        let message: string | undefined;
+        if (ct.includes('application/json')) {
+          try {
+            const errJson = (await res.json()) as { message?: string };
+            message = errJson?.message;
+          } catch {
+            // ignore
+          }
+        } else {
+          message = await res.text();
+        }
+        showSnackbar(message || `Failed to fetch transactions (${res.status})`, 'error');
         setTransactions([]);
         return;
       }
 
-      const data: any = ct.includes('application/json') ? await res.json() : {};
-      const raw: any[] = Array.isArray(data)
-        ? data
-        : Array.isArray(data.transactions)
-        ? data.transactions
+      const parsed: unknown = ct.includes('application/json') ? await res.json() : {};
+
+      const raw: ApiTxArray = isApiTxArray(parsed)
+        ? parsed
+        : isApiEnvelope(parsed)
+        ? parsed.transactions
         : [];
 
-      const list = raw.map((t) => ({
-        id: Number(t.id),
-        title: String(t.title ?? ''),
-        amount: Number(t.amount),
-        type: String(t.type ?? ''),
-        category: String(t.category ?? ''),
+      const list: Transaction[] = raw.map((t) => ({
+        id: toNumber(t.id),
+        title: toString(t.title),
+        amount: toNumber(t.amount),
+        type: toString(t.type),
+        category: toString(t.category),
       }));
 
-      console.log('[transactions] loaded:', list.length);
       setTransactions(list);
       setPage(1);
     } catch (err) {
+      // keep this generic to avoid leaking errors to the UI
+      // but log for debugging
+      // eslint-disable-next-line no-console
       console.error('[transactions] fetch error:', err);
       showSnackbar('Network error while fetching transactions', 'error');
       setTransactions([]);
@@ -80,7 +120,7 @@ export default function TransactionList() {
       setLoading(false);
     }
   }, [token, showSnackbar]);
-  /** ---------------------------------------------- */
+  /** -------------------------------------------------------- */
 
   useEffect(() => {
     if (hasFetchedRef.current) return;
