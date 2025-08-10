@@ -14,9 +14,7 @@ A full-stack application to **track your income and expenses** with secure **aut
 | Cache     | Redis                               |
 | Charts    | Chart.js / Recharts                 |
 | Auth      | JWT + RBAC                          |
-
 ---
-
 ## 🚀 Features
 
 - 🔐 User authentication (JWT)
@@ -33,13 +31,15 @@ A full-stack application to **track your income and expenses** with secure **aut
 ### 📦 Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/personal-finance-tracker.git
-cd personal-finance-tracker
+git clone https://github.com/devesh88888/Personal-Finance-Tracker-frontend
+cd Personal-Finance-Tracker-frontend
 ```
 
 ---
 
 ## 🛠️ Backend Setup (`/backend`)
+git clone https://github.com/devesh88888/Personal-Finance-Tracker-backend
+cd Personal-Finance-Tracker-backend
 
 ### 1. Install Dependencies
 
@@ -120,20 +120,7 @@ API runs at: `http://localhost:5000`
 
 ---
 
-## 🎨 Frontend Setup (`/frontend`)
 
-### 1. Install Dependencies
-
-```bash
-cd ../frontend
-npm install
-```
-
-### 2. Configure Environment
-
-```bash
-cp .env.example .env.local
-```
 
 Add:
 
@@ -141,7 +128,7 @@ Add:
 NEXT_PUBLIC_API_URL=http://localhost:5000/api
 ```
 
-### 3. Start Frontend Server
+Start Frontend Server
 
 ```bash
 npm run dev
@@ -168,26 +155,3 @@ Runs at: [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 🧑‍💻 Contributing
-
-```bash
-# Fork → Clone → Create Branch → Commit → Push → PR
-```
-
-```bash
-git checkout -b feature/analytics
-git commit -m "Add analytics route"
-git push origin feature/analytics
-```
-
----
-
-## 📄 License
-
-MIT © 2025 [Your Name or Organization]
-
----
-
-## 📬 Contact
-
-For questions/support, reach out at [your-email@example.com](mailto:your-email@example.com)
