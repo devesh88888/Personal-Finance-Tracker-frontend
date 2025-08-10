@@ -9,9 +9,9 @@ import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 
 interface Transaction {
   id: number;
-  title: string;
+  title: string;      // treated as "job name"
   amount: number;
-  type: string;
+  type: string;       // 'income' | 'expense'
   category: string;
 }
 
@@ -43,11 +43,21 @@ const toString = (v: unknown): string =>
 /* ------------------------------------------------ */
 
 export default function TransactionList() {
-  const { token, loaded } = useAuth(); // 👈 use loaded guard
+  const { token, loaded } = useAuth();
   const { showSnackbar } = useSnackbar();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // 🔎 name (job title) search
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+
+  // 🧮 filters
+  const [minAmt, setMinAmt] = useState<string>('');              // inclusive
+  const [maxAmt, setMaxAmt] = useState<string>('');              // inclusive
+  const [typeFilter, setTypeFilter] = useState<'all'|'income'|'expense'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   const hasFetchedRef = useRef(false);
 
@@ -55,9 +65,9 @@ export default function TransactionList() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  /** -------- Fetch transactions (tolerant, no `any`) -------- */
+  /** -------- Fetch transactions -------- */
   const fetchTransactions = useCallback(async () => {
-    if (!loaded) return; // 👈 wait for hydration
+    if (!loaded) return;
     if (!token) {
       showSnackbar('No auth token. Please sign in.', 'error');
       setTransactions([]);
@@ -70,7 +80,6 @@ export default function TransactionList() {
       const url = `${base}/api/transactions`;
 
       if (process.env.NODE_ENV !== 'production') {
-        // tracer: confirm which file fires the request
         // eslint-disable-next-line no-console
         console.log('[TransactionList] GET', url);
       }
@@ -87,9 +96,7 @@ export default function TransactionList() {
           try {
             const errJson = (await res.json()) as { message?: string };
             message = errJson?.message;
-          } catch {
-            /* ignore */
-          }
+          } catch {}
         } else {
           message = await res.text();
         }
@@ -125,24 +132,65 @@ export default function TransactionList() {
       setLoading(false);
     }
   }, [loaded, token, showSnackbar]);
-  /** -------------------------------------------------------- */
+  /** ------------------------------------- */
 
   useEffect(() => {
-    if (!loaded) return;                // 👈 wait for hydration
+    if (!loaded) return;
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
     fetchTransactions();
   }, [loaded, fetchTransactions]);
 
+  // Debounce the title query
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedQuery(query.trim().toLowerCase()), 200);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  // Unique categories for dropdown (from fetched data)
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    transactions.forEach((t) => {
+      const c = (t.category || '').trim();
+      if (c) set.add(c);
+    });
+    return ['all', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+  }, [transactions]);
+
+  // Combined filtering (title + amount range + type + category)
+  const filtered = useMemo(() => {
+    const min = minAmt.trim() === '' ? Number.NEGATIVE_INFINITY : Number(minAmt);
+    const max = maxAmt.trim() === '' ? Number.POSITIVE_INFINITY : Number(maxAmt);
+
+    return transactions.filter((t) => {
+      if (debouncedQuery && !t.title.toLowerCase().includes(debouncedQuery)) return false;
+
+      const amtOk = t.amount >= min && t.amount <= max;
+      if (!amtOk) return false;
+
+      if (typeFilter !== 'all' && t.type.toLowerCase() !== typeFilter) return false;
+
+      if (categoryFilter !== 'all' && t.category.toLowerCase() !== categoryFilter.toLowerCase())
+        return false;
+
+      return true;
+    });
+  }, [transactions, debouncedQuery, minAmt, maxAmt, typeFilter, categoryFilter]);
+
+  // reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQuery, minAmt, maxAmt, typeFilter, categoryFilter]);
+
   // Pagination derived values
-  const total = transactions.length;
+  const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
 
   const paged = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return transactions.slice(start, start + pageSize);
-  }, [transactions, currentPage, pageSize]);
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
 
   const from = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const to = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
@@ -170,6 +218,14 @@ export default function TransactionList() {
   );
 
   const goTo = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
+
+  const clearFilters = () => {
+    setQuery('');
+    setMinAmt('');
+    setMaxAmt('');
+    setTypeFilter('all');
+    setCategoryFilter('all');
+  };
 
   const Pagination = () => (
     <div className="flex items-center justify-between text-sm mt-2">
@@ -244,21 +300,103 @@ export default function TransactionList() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      {/* Top bar: summary + controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <TransactionSummary transactions={transactions} />
-        <button
-          onClick={fetchTransactions}
-          className="text-sm text-purple-600 hover:underline disabled:opacity-50"
-          disabled={loading}
-        >
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Job name search */}
+          <label className="sr-only" htmlFor="job-search">Search jobs</label>
+          <input
+            id="job-search"
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search jobs by name…"
+            className="border rounded px-3 py-1.5 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-purple-600"
+          />
+
+          {/* Amount range */}
+          <div className="flex items-center gap-1">
+            <label className="sr-only" htmlFor="min-amt">Min amount</label>
+            <input
+              id="min-amt"
+              type="number"
+              inputMode="decimal"
+              value={minAmt}
+              onChange={(e) => setMinAmt(e.target.value)}
+              placeholder="Min ₹"
+              className="border rounded px-2 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-purple-600"
+            />
+            <span className="text-gray-500">–</span>
+            <label className="sr-only" htmlFor="max-amt">Max amount</label>
+            <input
+              id="max-amt"
+              type="number"
+              inputMode="decimal"
+              value={maxAmt}
+              onChange={(e) => setMaxAmt(e.target.value)}
+              placeholder="Max ₹"
+              className="border rounded px-2 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-purple-600"
+            />
+          </div>
+
+          {/* Type filter */}
+          <label className="sr-only" htmlFor="type-filter">Type</label>
+          <select
+            id="type-filter"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as 'all'|'income'|'expense')}
+            className="border rounded px-2 py-1.5 text-sm"
+          >
+            <option value="all">All types</option>
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+          </select>
+
+          {/* Category filter */}
+          <label className="sr-only" htmlFor="category-filter">Category</label>
+          <select
+            id="category-filter"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="border rounded px-2 py-1.5 text-sm max-w-[12rem]"
+          >
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c === 'all' ? 'All categories' : c}
+              </option>
+            ))}
+          </select>
+
+          {/* Clear + Refresh */}
+          <button
+            onClick={clearFilters}
+            className="text-sm text-gray-600 hover:underline"
+            title="Clear all filters"
+          >
+            Clear
+          </button>
+
+          <button
+            onClick={fetchTransactions}
+            className="text-sm text-purple-600 hover:underline disabled:opacity-50"
+            disabled={loading}
+          >
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
+      {/* Results */}
       {loading ? (
         <p className="text-gray-500">Loading transactions…</p>
-      ) : transactions.length === 0 ? (
-        <p className="text-gray-500">No transactions yet.</p>
+      ) : total === 0 ? (
+        debouncedQuery || minAmt || maxAmt || typeFilter !== 'all' || categoryFilter !== 'all' ? (
+          <p className="text-gray-500">No results match your filters.</p>
+        ) : (
+          <p className="text-gray-500">No transactions yet.</p>
+        )
       ) : (
         <>
           <List
